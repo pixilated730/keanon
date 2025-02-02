@@ -47,6 +47,11 @@ if response.status_code == 200:
                 # Extract the channel name from the strong tag within the span
                 channel_name = a_tag.find('span').find('strong').text
                 
+                # Skip channels with "+18" content
+                if "18+" in channel_name:
+                    print(f"Skipping adult content channel: {channel_name}")
+                    continue
+                
                 # Write the channel information to the m3u8 file
                 m3u8_file.write(
                     f'#EXTINF:-1 tvg-id="{channel_name.replace(" ", ".")}" tvg-name="{channel_name}" tvg-logo="{default_logo_url}" group-title="eyepapcorn",{channel_name}\n'
