@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 url = "https://thedaddy.to/24-7-channels.php"
 
 # Base URL for the streaming channels
-base_stream_url = "https://zekonew.iosplayer.ru/zeko/premium{}/index.m3u8"
+base_stream_url = "https://zekonew.iosplayer.ru/zeko/premium{}/mono.m3u8"
 
 # Default logo URL for all channels
 default_logo_url = "https://raw.githubusercontent.com/pixilated730/icons-for-me-/main/icons/oing.jpeg"
