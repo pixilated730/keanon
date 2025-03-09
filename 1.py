@@ -7,12 +7,20 @@ from random import uniform
 
 # URLs and constants
 PAGE_URL = "https://thedaddy.to/24-7-channels.php"
+
 BASE_URLS = [
+   
+   
+    "https://zekonew.koskoros.ru/zeko/premium{}/mono.m3u8",
     "https://zekonew.iosplayer.ru/zeko/premium{}/mono.m3u8",
+    "https://ddy6new.koskoros.ru/ddy6/premium{}/mono.m3u8",
     "https://ddy6new.iosplayer.ru/ddy6/premium{}/mono.m3u8",
     "https://ddh2new.iosplayer.ru/ddh2/premium{}/mono.m3u8",
+    "https://windnew.koskoros.ru/wind/premium{}/mono.m3u8",
     "https://windnew.iosplayer.ru/wind/premium{}/mono.m3u8",
+    "https://dokko1new.koskoros.ru/dokko1/premium{}/mono.m3u8",
     "https://dokko1new.iosplayer.ru/dokko1/premium{}/mono.m3u8",
+    "https://top2new.koskoros.ru/top2/premium{}/mono.m3u8",
     "https://top2new.iosplayer.ru/top2/premium{}/mono.m3u8"
 ]
 DEFAULT_LOGO = "https://raw.githubusercontent.com/pixilated730/icons-for-me-/main/icons/oing.jpeg"
