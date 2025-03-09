@@ -5,12 +5,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from random import uniform
 
-# URLs and constants
 PAGE_URL = "https://thedaddy.to/24-7-channels.php"
-
 BASE_URLS = [
-   
-   
+    "https://nfsnew.koskoros.ru/nfs/premium{}/mono.m3u8",
+    "https://wikinew.koskoros.ru/wiki/premium{}/mono.m3u8",
     "https://zekonew.koskoros.ru/zeko/premium{}/mono.m3u8",
     "https://zekonew.iosplayer.ru/zeko/premium{}/mono.m3u8",
     "https://ddy6new.koskoros.ru/ddy6/premium{}/mono.m3u8",
@@ -26,100 +24,49 @@ BASE_URLS = [
 DEFAULT_LOGO = "https://raw.githubusercontent.com/pixilated730/icons-for-me-/main/icons/oing.jpeg"
 M3U8_HEADER = """#EXTM3U url-tvg="https://github.com/dtankdempse/daddylive-m3u/raw/refs/heads/main/epg.xml"\n"""
 
-# Maintain separate session and rate limit tracking for each base URL
 class RateLimitedSession:
     def __init__(self, base_url):
         self.session = requests.Session()
         self.base_url = base_url
         self.last_request = 0
-        self.min_interval = 1.0  # Minimum time between requests
-        self.backoff_time = 1.0  # Initial backoff time
-        self.max_backoff = 30.0  # Maximum backoff time
+        self.min_interval = 0.5
 
     def get(self, url, **kwargs):
         current_time = time.time()
         time_since_last = current_time - self.last_request
-        
         if time_since_last < self.min_interval:
             time.sleep(self.min_interval - time_since_last)
-        
         try:
             response = self.session.get(url, **kwargs)
-            
-            if response.status_code == 429:
-                time.sleep(self.backoff_time)
-                self.backoff_time = min(self.backoff_time * 2, self.max_backoff)
-                raise requests.exceptions.RequestException("Rate limited")
-            
-            # Reset backoff on successful request
-            self.backoff_time = 1.0
             self.last_request = time.time()
             return response
-            
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
+            print(f"[{time.strftime('%H:%M:%S')}] Request error for {url}: {e}")
             self.last_request = time.time()
             raise
 
 sessions = {base_url: RateLimitedSession(base_url) for base_url in BASE_URLS}
 
-def check_stream_url(url, max_retries=5):
-    base_url = next(base for base in BASE_URLS if base.split('/')[2] in url)
-    session = sessions[base_url]
-    
+def check_stream_url(url):
+    base_url = next((base for base in BASE_URLS if base.split('/')[2] in url), None)
+    session = sessions[base_url] if base_url else requests.Session()
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0',
         'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Origin': 'https://newzar.xyz',
+        'Referer': 'https://newzar.xyz/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'cross-site',
         'Connection': 'keep-alive'
     }
-    
-    for attempt in range(max_retries):
-        try:
-            if attempt > 0:
-                sleep_time = min(2 ** attempt, 10)  # Exponential backoff
-                time.sleep(uniform(sleep_time, sleep_time + 2))
-            
-            response = session.get(url, timeout=10, stream=True, headers=headers)
-            
-            if response.status_code == 404:
-                continue  # Try other attempts for 404s
-                
-            if response.status_code != 200:
-                time.sleep(uniform(1, 3))
-                continue
-                
-            content_start = next(response.iter_lines(), None)
-            if content_start and b'#EXTM3U' in content_start:
-                return True
-            
-        except requests.exceptions.RequestException:
-            if attempt == max_retries - 1:
-                return False
-            continue
-        except Exception:
-            continue
-    
-    return False
-
-def verify_404_channels(failed_channels, m3u8_file):
-    print("\nVerifying channels marked as 404...")
-    working_after_retry = 0
-    
-    for channel in failed_channels:
-        print(f"Retrying channel {channel['number']}: {channel['name']}")
-        
-        # Try each base URL again with increased patience
-        for base_url in BASE_URLS:
-            stream_url = base_url.format(channel['number'])
-            if check_stream_url(stream_url, max_retries=7):  # More retries for verification
-                channel['url'] = stream_url
-                channel['status'] = 'working'
-                write_channel_to_m3u8(channel, m3u8_file)
-                working_after_retry += 1
-                print(f"Success! Channel {channel['number']} is working")
-                break
-            time.sleep(0.5)  # Delay between base URL attempts
-    
-    return working_after_retry
+    try:
+        response = session.get(url, timeout=5, headers=headers)
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
 
 def write_channel_to_m3u8(channel, m3u8_file):
     m3u8_file.write(
@@ -129,77 +76,65 @@ def write_channel_to_m3u8(channel, m3u8_file):
     )
     m3u8_file.write(f"{channel['url']}\n")
     m3u8_file.flush()
+    print(f"[{time.strftime('%H:%M:%S')}] Wrote working channel {channel['number']} to m3u8")
 
 def process_channel(item):
     try:
         a_tag = item.find('a')
         if not a_tag:
             return None
-        
         stream_path = a_tag.get('href', '')
         channel_number = stream_path.split('-')[-1].split('.')[0]
         if not channel_number.isdigit():
             return None
-            
         channel_name = a_tag.find('span').find('strong').text.strip()
-        
         if "18+" in channel_name:
             return None
-        
-        # Try each URL
         working_url = None
         for base_url in BASE_URLS:
             stream_url = base_url.format(channel_number)
             if check_stream_url(stream_url):
                 working_url = stream_url
                 break
-            time.sleep(0.2)  # Small delay between attempts
-        
-        return {
+            time.sleep(0.1)
+        result = {
             'name': channel_name,
             'number': channel_number,
             'url': working_url,
             'status': 'working' if working_url else '404'
         }
-        
+        return result
     except Exception as e:
-        print(f"Error processing channel: {str(e)}")
+        print(f"[{time.strftime('%H:%M:%S')}] Error processing channel {channel_number}: {e}")
         return None
 
 def main():
     start_time = time.time()
     failed_channels = []
-    
+    print(f"[{time.strftime('%H:%M:%S')}] Fetching channel list from {PAGE_URL}")
     try:
-        # Get channel list
-        response = requests.get(PAGE_URL)
+        response = requests.get(PAGE_URL, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         grid_items = soup.find_all('div', class_='grid-item')
-        
+        if not grid_items:
+            print("No channels found on the page!")
+            return
         total_channels = len(grid_items)
+        print(f"[{time.strftime('%H:%M:%S')}] Found {total_channels} channels to process")
         processed = 0
         working_count = 0
         not_working_count = 0
-        
-        # Open files for real-time writing
         with open("eyepapcorn.m3u8", "w", encoding="utf-8") as m3u8_file, \
              open("404.json", "w", encoding="utf-8") as json_file:
-            
-            # Write M3U8 header
             m3u8_file.write(M3U8_HEADER)
-            
-            # Process channels with limited concurrency
-            with ThreadPoolExecutor(max_workers=2) as executor:  # Reduced workers
-                futures = []
-                for item in grid_items:
-                    future = executor.submit(process_channel, item)
-                    futures.append(future)
-                
+            m3u8_file.flush()
+            print(f"[{time.strftime('%H:%M:%S')}] Initialized m3u8 file")
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {executor.submit(process_channel, item): item for item in grid_items}
                 for future in as_completed(futures):
                     processed += 1
                     result = future.result()
-                    
                     if result:
                         if result['status'] == 'working':
                             working_count += 1
@@ -210,24 +145,14 @@ def main():
                             json.dump(result, json_file)
                             json_file.write('\n')
                             json_file.flush()
-                    
-                    if processed % 5 == 0:
-                        print(f"Progress: {processed}/{total_channels} ({(processed/total_channels*100):.1f}%)")
-            
-            # Verify channels marked as 404
-            if failed_channels:
-                recovered = verify_404_channels(failed_channels, m3u8_file)
-                working_count += recovered
-                not_working_count -= recovered
-        
+                            print(f"[{time.strftime('%H:%M:%S')}] Wrote 404 channel {result['number']} to json")
+                    print(f"[{time.strftime('%H:%M:%S')}] Progress: {processed}/{total_channels} ({(processed/total_channels*100):.1f}%)")
         end_time = time.time()
-        print(f"\nComplete in {end_time - start_time:.2f} seconds:")
+        print(f"\n[{time.strftime('%H:%M:%S')}] Complete in {end_time - start_time:.2f} seconds:")
         print(f"Working: {working_count}")
         print(f"Not working: {not_working_count}")
-        print(f"Recovered channels: {recovered}")
-        
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
+        print(f"[{time.strftime('%H:%M:%S')}] An error occurred: {e}")
         raise
 
 if __name__ == "__main__":
